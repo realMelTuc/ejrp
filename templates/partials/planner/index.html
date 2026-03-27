@@ -1,0 +1,394 @@
+<div class="header-bar">
+    <div class="header-left">
+        <div class="icon-square teal">🛸</div>
+        <h1>Route Planner</h1>
+    </div>
+    <div class="header-subtitle">Plan jump routes · Calculate fuel costs · Save to library</div>
+</div>
+
+<div class="planner-grid">
+
+    <!-- ── Left: Config panel ── -->
+    <div class="planner-config">
+        <h3>Configuration</h3>
+
+        <label class="field-label">Ship</label>
+        <select id="ship-select" class="dark-input" onchange="onShipChange()">
+            <option value="">— Select Ship —</option>
+        </select>
+
+        <div id="ship-info" style="display:none;background:#0d1117;border:1px solid #1e2530;border-radius:4px;padding:8px;font-size:11px;margin-top:4px">
+            <div class="kv-row"><span class="kv-key">Class</span><span class="kv-val" id="si-class">—</span></div>
+            <div class="kv-row"><span class="kv-key">Race</span><span class="kv-val" id="si-race">—</span></div>
+            <div class="kv-row"><span class="kv-key">Fuel Type</span><span class="kv-val" id="si-fuel">—</span></div>
+            <div class="kv-row"><span class="kv-key">Base Range</span><span class="kv-val" id="si-base-range">—</span></div>
+            <div class="kv-row" id="si-cargo-row"><span class="kv-key">Cargo</span><span class="kv-val" id="si-cargo">—</span></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+            <div>
+                <label class="field-label">JDC Level</label>
+                <select id="jdc-select" class="dark-input" onchange="updateMaxRange()">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5" selected>5</option>
+                </select>
+            </div>
+            <div>
+                <label class="field-label">JDFE Level</label>
+                <select id="jdfe-select" class="dark-input">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5" selected>5</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="max-range-info" style="background:#0d1117;border:1px solid #1e2530;border-radius:4px;padding:8px;font-size:11px;display:none">
+            <div style="color:#8892a4">Max Jump Range</div>
+            <div id="max-range-val" style="font-size:16px;font-family:'Barlow Condensed',sans-serif;font-weight:700;color:#00d4aa"></div>
+        </div>
+
+        <label class="field-label">Fuel Price (ISK/unit)</label>
+        <div style="display:flex;gap:6px">
+            <input type="number" id="fuel-price" class="dark-input" value="500" min="0" step="10" style="flex:1">
+            <button class="btn muted" style="white-space:nowrap;font-size:11px;padding:6px 8px" onclick="loadFuelPrice()">Load</button>
+        </div>
+
+        <div style="margin-top:8px;border-top:1px solid #1e2530;padding-top:8px">
+            <button class="btn teal full" onclick="calculateRoute()">⚡ Calculate</button>
+        </div>
+
+        <div id="save-form" style="display:none;border-top:1px solid #1e2530;padding-top:10px;margin-top:6px">
+            <label class="field-label">Route Name</label>
+            <input type="text" id="route-name" class="dark-input" placeholder="e.g. Jita to HED-GP JF run">
+            <label class="field-label" style="margin-top:6px">Notes</label>
+            <textarea id="route-notes" class="dark-input" rows="2" placeholder="Optional notes..." style="resize:vertical"></textarea>
+            <div style="margin-top:8px">
+                <button class="btn teal full" onclick="saveRoute()">💾 Save Route</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Right: Waypoints + Results ── -->
+    <div class="planner-results">
+
+        <!-- Waypoints input -->
+        <div class="summary-panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h3>Waypoints</h3>
+                <button class="btn-sm teal" onclick="addWaypoint()">+ Add Jump</button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:30px 1fr 1fr 90px 30px;gap:6px;padding:4px 0;border-bottom:1px solid #1e2530;margin-bottom:4px">
+                <div style="font-size:10px;color:#6b7280;text-align:center">#</div>
+                <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:1px">From System</div>
+                <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:1px">To System</div>
+                <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:1px">Dist (LY)</div>
+                <div></div>
+            </div>
+
+            <div id="waypoints-container">
+                <!-- Rows injected here -->
+            </div>
+
+            <div id="waypoints-empty" style="text-align:center;color:#6b7280;padding:20px;font-size:12px">
+                Click "Add Jump" to add your first waypoint
+            </div>
+        </div>
+
+        <!-- Calculation results -->
+        <div id="results-panel" style="display:none">
+
+            <!-- Summary -->
+            <div class="summary-panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h3>Route Summary</h3>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <span id="range-warning" style="display:none;font-size:11px;color:#ef4444">⚠ Out-of-range jumps</span>
+                        <button class="btn-sm teal" onclick="showSaveForm()">💾 Save</button>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+                    <div class="summary-row"><span class="summary-label">Ship</span><span class="summary-value" id="res-ship">—</span></div>
+                    <div class="summary-row"><span class="summary-label">Fuel Type</span><span class="summary-value" id="res-fuel-type">—</span></div>
+                    <div class="summary-row"><span class="summary-label">Total Jumps</span><span class="summary-value teal" id="res-jumps">—</span></div>
+                    <div class="summary-row"><span class="summary-label">Max Range</span><span class="summary-value" id="res-max-range">—</span></div>
+                    <div class="summary-row"><span class="summary-label">Total Distance</span><span class="summary-value" id="res-dist">—</span></div>
+                    <div class="summary-row"><span class="summary-label">JDC / JDFE</span><span class="summary-value" id="res-skills">—</span></div>
+                    <div class="summary-row"><span class="summary-label">Total Fuel</span><span class="summary-value amber" id="res-fuel">—</span></div>
+                    <div class="summary-row"><span class="summary-label">Fuel Price</span><span class="summary-value" id="res-fuel-price">—</span></div>
+                    <div class="summary-row" style="grid-column:1/-1;border-bottom:none">
+                        <span class="summary-label" style="font-weight:600;color:#e6e8eb">Total ISK Cost</span>
+                        <span class="summary-value teal" id="res-cost" style="font-size:18px;font-family:'Barlow Condensed',sans-serif;font-weight:700">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Steps table -->
+            <div>
+                <div class="section-header" style="margin-top:4px"><h3>Jump Steps</h3></div>
+                <table class="steps-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36px">#</th>
+                            <th>From System</th>
+                            <th>To System</th>
+                            <th>Distance</th>
+                            <th>Fuel (units)</th>
+                            <th>Cost (ISK)</th>
+                            <th style="width:30px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="steps-tbody"></tbody>
+                </table>
+            </div>
+
+        </div>
+
+        <!-- Empty state -->
+        <div id="results-empty" style="text-align:center;padding:40px;color:#6b7280;font-size:13px">
+            Add waypoints above, then click <strong style="color:#00d4aa">Calculate</strong> to see your route breakdown
+        </div>
+
+    </div>
+</div>
+
+<script>
+(function() {
+    var _ships = {};
+    var _currentResult = null;
+    var _wpCount = 0;
+
+    // ── Load ships into dropdown ──────────────────────────────────────────────
+    fetch('/api/planner/ships').then(r => r.json()).then(groups => {
+        var sel = document.getElementById('ship-select');
+        groups.forEach(g => {
+            var og = document.createElement('optgroup');
+            og.label = g.label;
+            g.ships.forEach(s => {
+                var opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                og.appendChild(opt);
+            });
+            sel.appendChild(og);
+        });
+    });
+
+    // ── Load fuel price from registry ────────────────────────────────────────
+    window.loadFuelPrice = function() {
+        var ship = document.getElementById('ship-select').value;
+        if (!ship || !_ships[ship]) {
+            ejrpToast('Select a ship first', 'warn');
+            return;
+        }
+        var ft = _ships[ship].fuel_type;
+        fetch('/api/fuel/prices').then(r => r.json()).then(prices => {
+            var match = prices.find(p => p.fuel_type === ft);
+            if (match) {
+                document.getElementById('fuel-price').value = match.price_per_unit;
+                ejrpToast('Loaded price for ' + ft, 'info');
+            } else {
+                ejrpToast('No price found for ' + ft, 'warn');
+            }
+        });
+    };
+
+    // ── On ship change ────────────────────────────────────────────────────────
+    window.onShipChange = function() {
+        var name = document.getElementById('ship-select').value;
+        if (!name) {
+            document.getElementById('ship-info').style.display = 'none';
+            document.getElementById('max-range-info').style.display = 'none';
+            return;
+        }
+        if (_ships[name]) {
+            renderShipInfo(_ships[name], name);
+            return;
+        }
+        fetch('/api/planner/ship/' + encodeURIComponent(name)).then(r => r.json()).then(d => {
+            _ships[name] = d;
+            renderShipInfo(d, name);
+        });
+    };
+
+    function renderShipInfo(d, name) {
+        document.getElementById('si-class').textContent      = d.class || '—';
+        document.getElementById('si-race').textContent       = d.race || '—';
+        document.getElementById('si-fuel').textContent       = d.fuel_type || '—';
+        document.getElementById('si-base-range').textContent = (d.base_range_ly || 0) + ' LY (base)';
+        if (d.cargo_m3) {
+            document.getElementById('si-cargo').textContent  = fmtNum(d.cargo_m3) + ' m³';
+            document.getElementById('si-cargo-row').style.display = '';
+        } else {
+            document.getElementById('si-cargo-row').style.display = 'none';
+        }
+        document.getElementById('ship-info').style.display = '';
+        updateMaxRange();
+    }
+
+    // ── Update max range display ──────────────────────────────────────────────
+    window.updateMaxRange = function() {
+        var name = document.getElementById('ship-select').value;
+        if (!name || !_ships[name]) { document.getElementById('max-range-info').style.display = 'none'; return; }
+        var jdc = parseInt(document.getElementById('jdc-select').value) || 0;
+        var base = _ships[name].base_range_ly || 0;
+        var eff = (base * (1 + 0.25 * jdc)).toFixed(2);
+        document.getElementById('max-range-val').textContent = eff + ' LY';
+        document.getElementById('max-range-info').style.display = '';
+    };
+
+    // ── Waypoint management ───────────────────────────────────────────────────
+    window.addWaypoint = function(fromSys, toSys, dist) {
+        _wpCount++;
+        var n = _wpCount;
+        var container = document.getElementById('waypoints-container');
+        document.getElementById('waypoints-empty').style.display = 'none';
+
+        var row = document.createElement('div');
+        row.className = 'waypoint-row';
+        row.id = 'wp-' + n;
+        row.innerHTML = `
+            <div class="wp-num">${n}</div>
+            <input type="text" class="dark-input wp-from" placeholder="Origin" value="${fromSys || ''}" style="font-size:11px;padding:6px 8px">
+            <input type="text" class="dark-input wp-to" placeholder="Destination" value="${toSys || ''}" style="font-size:11px;padding:6px 8px">
+            <input type="number" class="dark-input wp-dist" placeholder="LY" value="${dist || ''}" min="0.01" step="0.01" style="font-size:11px;padding:6px 8px;font-family:'Geist Mono',monospace">
+            <button class="wp-remove" onclick="removeWaypoint(${n})" title="Remove">✕</button>
+        `;
+        container.appendChild(row);
+    };
+
+    window.removeWaypoint = function(n) {
+        var row = document.getElementById('wp-' + n);
+        if (row) row.remove();
+        var rows = document.querySelectorAll('.waypoint-row');
+        if (!rows.length) document.getElementById('waypoints-empty').style.display = '';
+        rows.forEach((r, i) => { r.querySelector('.wp-num').textContent = i + 1; });
+    };
+
+    // ── Calculate route ───────────────────────────────────────────────────────
+    window.calculateRoute = function() {
+        var ship = document.getElementById('ship-select').value;
+        if (!ship) { ejrpToast('Select a ship first', 'warn'); return; }
+
+        var rows = document.querySelectorAll('.waypoint-row');
+        if (!rows.length) { ejrpToast('Add at least one waypoint', 'warn'); return; }
+
+        var waypoints = [];
+        var valid = true;
+        rows.forEach(row => {
+            var from = row.querySelector('.wp-from').value.trim();
+            var to   = row.querySelector('.wp-to').value.trim();
+            var dist = parseFloat(row.querySelector('.wp-dist').value);
+            if (!from || !to || isNaN(dist) || dist <= 0) { valid = false; return; }
+            waypoints.push({ from, to, distance_ly: dist });
+        });
+
+        if (!valid || !waypoints.length) { ejrpToast('Fill in all waypoint fields', 'warn'); return; }
+
+        var payload = {
+            ship_name: ship,
+            jdc_level: parseInt(document.getElementById('jdc-select').value),
+            jdfe_level: parseInt(document.getElementById('jdfe-select').value),
+            fuel_price_isk: parseFloat(document.getElementById('fuel-price').value) || 500,
+            waypoints,
+        };
+
+        fetch('/api/planner/calculate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        }).then(r => r.json()).then(d => {
+            if (d.error) { ejrpToast(d.error, 'error'); return; }
+            _currentResult = d;
+            renderResults(d);
+        }).catch(e => ejrpToast('Calculation failed: ' + e.message, 'error'));
+    };
+
+    function renderResults(d) {
+        document.getElementById('results-empty').style.display = 'none';
+        document.getElementById('results-panel').style.display = '';
+        document.getElementById('range-warning').style.display = d.has_out_of_range ? '' : 'none';
+
+        document.getElementById('res-ship').textContent       = d.ship_name;
+        document.getElementById('res-fuel-type').textContent  = d.fuel_type;
+        document.getElementById('res-jumps').textContent      = d.total_jumps;
+        document.getElementById('res-max-range').textContent  = d.max_range_ly + ' LY';
+        document.getElementById('res-dist').textContent       = fmtDist(d.total_distance_ly);
+        document.getElementById('res-skills').textContent     = 'JDC ' + d.jdc_level + ' / JDFE ' + d.jdfe_level;
+        document.getElementById('res-fuel').textContent       = fmtNum(d.total_fuel) + ' units';
+        document.getElementById('res-fuel-price').textContent = fmtISK(d.fuel_price_isk) + ' /unit';
+        document.getElementById('res-cost').textContent       = fmtISK(d.total_cost_isk);
+
+        var tbody = document.getElementById('steps-tbody');
+        tbody.innerHTML = d.steps.map(s => {
+            var rowCls = s.within_range ? '' : 'step-row-bad';
+            var warn   = s.within_range ? '' : '<span class="step-warn" title="Exceeds max range">⚠</span>';
+            var distCls= s.within_range ? 'step-dist' : 'step-dist range-bad';
+            return `<tr class="${rowCls}">
+                <td class="step-num">${s.step}</td>
+                <td style="font-size:12px;color:#e6e8eb">${s.from_system}</td>
+                <td style="font-size:12px;color:#e6e8eb">${s.to_system}</td>
+                <td class="${distCls}">${s.distance_ly} LY</td>
+                <td class="step-fuel">${fmtNum(s.fuel)}</td>
+                <td class="step-cost">${fmtISK(s.cost_isk)}</td>
+                <td>${warn}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ── Save form ─────────────────────────────────────────────────────────────
+    window.showSaveForm = function() {
+        document.getElementById('save-form').style.display = '';
+        document.getElementById('route-name').focus();
+    };
+
+    window.saveRoute = function() {
+        if (!_currentResult) { ejrpToast('Calculate route first', 'warn'); return; }
+        var name = document.getElementById('route-name').value.trim();
+        if (!name) { ejrpToast('Enter a route name', 'warn'); return; }
+
+        var rows = document.querySelectorAll('.waypoint-row');
+        var waypoints = [];
+        rows.forEach(row => {
+            waypoints.push({
+                from: row.querySelector('.wp-from').value.trim(),
+                to:   row.querySelector('.wp-to').value.trim(),
+                distance_ly: parseFloat(row.querySelector('.wp-dist').value),
+            });
+        });
+
+        var payload = {
+            ship_name: document.getElementById('ship-select').value,
+            jdc_level: parseInt(document.getElementById('jdc-select').value),
+            jdfe_level: parseInt(document.getElementById('jdfe-select').value),
+            fuel_price_isk: parseFloat(document.getElementById('fuel-price').value) || 500,
+            waypoints,
+            name,
+            notes: document.getElementById('route-notes').value.trim(),
+        };
+
+        fetch('/api/planner/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        }).then(r => r.json()).then(d => {
+            if (d.error) { ejrpToast(d.error, 'error'); return; }
+            ejrpToast('Route saved!', 'success');
+            document.getElementById('save-form').style.display = 'none';
+            setTimeout(() => loadPanel('/routes/' + d.id + '/'), 800);
+        }).catch(e => ejrpToast('Save failed: ' + e.message, 'error'));
+    };
+
+    // Add one blank waypoint to start
+    addWaypoint();
+    addWaypoint();
+})();
+</script>
