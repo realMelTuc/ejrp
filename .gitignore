@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+*.env*
+!*.env.example
+.env.ejrp
+.vercel/
+node_modules/
+*.log
+.DS_Store
