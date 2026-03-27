@@ -1,0 +1,146 @@
+<div class="header-bar">
+    <div class="header-left">
+        <div class="icon-square amber">⛽</div>
+        <h1>Fuel Prices</h1>
+    </div>
+    <div class="header-subtitle">Isotope price registry · Update market prices per fuel type</div>
+</div>
+
+<div id="fuel-cards" class="fuel-price-grid" style="margin-bottom:24px">
+    <p style="color:#6b7280;font-size:12px;grid-column:1/-1">Loading prices...</p>
+</div>
+
+<div style="background:#111620;border:1px solid #1e2530;border-radius:4px;padding:20px;margin-bottom:24px">
+    <div class="section-header" style="margin-bottom:16px">
+        <h3>Update Prices</h3>
+        <span style="font-size:11px;color:#6b7280">Enter current Jita sell price per isotope unit</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px" id="update-form-grid"></div>
+    <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
+        <button class="btn teal" onclick="savePrices()">💾 Save All Prices</button>
+        <select id="price-source" class="dark-select">
+            <option value="jita">Jita</option>
+            <option value="amarr">Amarr</option>
+            <option value="dodixie">Dodixie</option>
+            <option value="manual">Manual</option>
+        </select>
+        <span style="font-size:11px;color:#6b7280">Market source</span>
+    </div>
+</div>
+
+<div>
+    <div class="section-header" style="margin-bottom:12px">
+        <h3>Fuel Usage History</h3>
+        <span style="font-size:11px;color:#6b7280">From saved routes</span>
+    </div>
+    <table class="data-grid">
+        <thead><tr>
+            <th>Fuel Type</th><th>Routes</th><th>Total Isotopes</th>
+            <th>Total Spent (ISK)</th><th>Avg Price Used</th><th>Current Price</th><th>Price Δ</th>
+        </tr></thead>
+        <tbody id="fuel-history-body">
+            <tr><td colspan="7" style="text-align:center;color:#6b7280;padding:20px">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+(function() {
+    var _currentPrices = {};
+    var FUEL_COLORS = {
+        'Oxygen Isotopes':   '#f59e0b',
+        'Hydrogen Isotopes': '#60a5fa',
+        'Nitrogen Isotopes': '#00d4aa',
+        'Helium Isotopes':   '#ec4899',
+    };
+
+    function loadPrices() {
+        fetch('/api/fuel/prices').then(r => r.json()).then(prices => {
+            renderCards(prices);
+            renderUpdateForm(prices);
+        });
+    }
+
+    function renderCards(prices) {
+        var el = document.getElementById('fuel-cards');
+        if (!prices.length) { el.innerHTML = '<p style="color:#6b7280;font-size:12px;grid-column:1/-1">No prices found</p>'; return; }
+        el.innerHTML = prices.map(p => {
+            _currentPrices[p.fuel_type] = p.price_per_unit;
+            var color = FUEL_COLORS[p.fuel_type] || '#e6e8eb';
+            var race  = p.race || '';
+            var ships = (p.ships || []).join(', ');
+            return `<div class="fuel-price-card">
+                <div class="fuel-name">${p.fuel_type}</div>
+                <div class="fuel-val" style="color:${color}">${fmtISK(p.price_per_unit)} <span style="font-size:12px;color:#6b7280;font-family:system-ui">ISK</span></div>
+                <div class="fuel-race">${race} ships</div>
+                <div class="fuel-ships" style="margin-top:6px;color:#4b5563">${ships}</div>
+                <div style="font-size:9px;color:#4b5563;margin-top:6px">Updated: ${fmtDate(p.updated_at)} · ${p.source || 'manual'}</div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderUpdateForm(prices) {
+        var grid = document.getElementById('update-form-grid');
+        grid.innerHTML = prices.map(p => {
+            var color = FUEL_COLORS[p.fuel_type] || '#e6e8eb';
+            return `<div style="display:flex;flex-direction:column;gap:4px">
+                <label class="field-label" style="color:${color}">${p.fuel_type}</label>
+                <input type="number" id="price-${p.fuel_type.replace(/\s+/g,'-')}"
+                    class="dark-input" value="${p.price_per_unit}"
+                    min="0" step="10" placeholder="ISK per unit"
+                    style="font-family:'Geist Mono',monospace">
+            </div>`;
+        }).join('');
+    }
+
+    window.savePrices = function() {
+        var source = document.getElementById('price-source').value;
+        var FUEL_TYPES = ['Oxygen Isotopes', 'Hydrogen Isotopes', 'Nitrogen Isotopes', 'Helium Isotopes'];
+        var updates = FUEL_TYPES.map(ft => {
+            var inputId = 'price-' + ft.replace(/\s+/g, '-');
+            var input = document.getElementById(inputId);
+            if (!input) return null;
+            var price = parseFloat(input.value);
+            if (isNaN(price) || price < 0) return null;
+            return { fuel_type: ft, price_per_unit: price, source };
+        }).filter(Boolean);
+        if (!updates.length) { ejrpToast('No valid prices to save', 'warn'); return; }
+        fetch('/api/fuel/prices', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(updates),
+        }).then(r => r.json()).then(d => {
+            if (d.error) { ejrpToast(d.error, 'error'); return; }
+            ejrpToast('Updated ' + d.updated + ' price' + (d.updated !== 1 ? 's' : ''), 'success');
+            loadPrices();
+        }).catch(e => ejrpToast('Save failed: ' + e.message, 'error'));
+    };
+
+    function loadHistory() {
+        fetch('/api/fuel/history').then(r => r.json()).then(rows => {
+            var tbody = document.getElementById('fuel-history-body');
+            if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#6b7280;padding:20px">No route data yet</td></tr>'; return; }
+            tbody.innerHTML = rows.map(r => {
+                var avgUsed = parseFloat(r.avg_price_used || 0);
+                var current = parseFloat(r.current_price || 0);
+                var delta   = current - avgUsed;
+                var dCls    = delta > 0 ? 'isk-neg' : delta < 0 ? 'isk-pos' : 'isk-neu';
+                var dStr    = delta === 0 ? '—' : (delta > 0 ? '+' : '') + fmtISK(delta);
+                var color   = FUEL_COLORS[r.fuel_type] || '#e6e8eb';
+                return `<tr>
+                    <td style="color:${color};font-size:12px">${r.fuel_type}</td>
+                    <td style="font-family:monospace">${r.route_count}</td>
+                    <td style="font-family:monospace;color:#f59e0b">${fmtNum(r.total_isotopes)}</td>
+                    <td style="font-family:monospace;color:#00d4aa">${fmtISK(r.total_spent_isk)}</td>
+                    <td style="font-family:monospace;color:#8892a4">${fmtISK(avgUsed)}</td>
+                    <td style="font-family:monospace">${current ? fmtISK(current) : '—'}</td>
+                    <td class="${dCls};font-family:monospace">${dStr}</td>
+                </tr>`;
+            }).join('');
+        });
+    }
+
+    loadPrices();
+    loadHistory();
+})();
+</script>

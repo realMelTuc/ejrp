@@ -1,0 +1,121 @@
+<div class="header-bar">
+    <div class="header-left">
+        <div class="icon-square teal">📂</div>
+        <h1>Saved Routes</h1>
+    </div>
+    <div class="header-subtitle">Jump route library · Filter, search, and manage saved routes</div>
+</div>
+
+<div class="filter-row" style="margin-bottom:16px">
+    <input type="text" id="route-search" class="search-input" placeholder="Search by name, origin, or destination..."
+        oninput="debounceLoad()" style="flex:2">
+    <select id="ship-filter" class="dark-select" onchange="loadRoutes()" style="flex:1;min-width:130px">
+        <option value="">All Ships</option>
+    </select>
+    <select id="status-filter" class="dark-select" onchange="loadRoutes()">
+        <option value="">All Statuses</option>
+        <option value="saved">Saved</option>
+        <option value="active">Active</option>
+        <option value="completed">Completed</option>
+    </select>
+    <button class="btn teal" onclick="loadPanel('/planner/')">+ New Route</button>
+</div>
+
+<table class="data-grid" id="routes-table">
+    <thead>
+        <tr>
+            <th>Name</th><th>Ship</th><th>Class</th><th>Route</th>
+            <th>Jumps</th><th>Distance</th><th>Fuel</th><th>Cost</th><th>Status</th><th>Saved</th>
+        </tr>
+    </thead>
+    <tbody id="routes-body">
+        <tr><td colspan="10" style="text-align:center;color:#6b7280;padding:30px">Loading...</td></tr>
+    </tbody>
+</table>
+
+<div class="pagination" id="routes-pagination" style="display:none">
+    <div id="routes-total" style="font-size:12px;color:#6b7280"></div>
+    <div class="page-btns">
+        <button class="btn muted" id="prev-btn" onclick="changePage(-1)">← Prev</button>
+        <span class="page-num" id="page-info">Page 1</span>
+        <button class="btn muted" id="next-btn" onclick="changePage(1)">Next →</button>
+    </div>
+</div>
+
+<script>
+(function() {
+    var _page = 1;
+    var _pages = 1;
+    var _debounce = null;
+
+    fetch('/api/planner/ships').then(r => r.json()).then(groups => {
+        var sel = document.getElementById('ship-filter');
+        groups.forEach(g => {
+            var og = document.createElement('optgroup');
+            og.label = g.label;
+            g.ships.forEach(s => {
+                var opt = document.createElement('option');
+                opt.value = s; opt.textContent = s;
+                og.appendChild(opt);
+            });
+            sel.appendChild(og);
+        });
+    });
+
+    window.debounceLoad = function() {
+        clearTimeout(_debounce);
+        _debounce = setTimeout(loadRoutes, 300);
+    };
+
+    window.loadRoutes = function(page) {
+        _page = page || 1;
+        var q      = document.getElementById('route-search').value.trim();
+        var ship   = document.getElementById('ship-filter').value;
+        var status = document.getElementById('status-filter').value;
+        var params = new URLSearchParams({ page: _page });
+        if (q)      params.set('q', q);
+        if (ship)   params.set('ship', ship);
+        if (status) params.set('status', status);
+        fetch('/api/routes?' + params).then(r => r.json()).then(d => {
+            _pages = d.pages;
+            renderRoutes(d.routes);
+            var pag = document.getElementById('routes-pagination');
+            pag.style.display = d.total > 0 ? '' : 'none';
+            document.getElementById('routes-total').textContent = d.total + ' route' + (d.total !== 1 ? 's' : '');
+            document.getElementById('page-info').textContent = 'Page ' + d.page + ' / ' + d.pages;
+            document.getElementById('prev-btn').disabled = d.page <= 1;
+            document.getElementById('next-btn').disabled = d.page >= d.pages;
+        });
+    };
+
+    window.changePage = function(dir) {
+        var np = _page + dir;
+        if (np < 1 || np > _pages) return;
+        loadRoutes(np);
+    };
+
+    function renderRoutes(routes) {
+        var tbody = document.getElementById('routes-body');
+        if (!routes.length) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#6b7280;padding:40px">No routes found · <a style="color:#00d4aa;cursor:pointer" onclick="loadPanel(\'/planner/\')">Plan your first route →</a></td></tr>';
+            return;
+        }
+        tbody.innerHTML = routes.map(r => `
+            <tr style="cursor:pointer" onclick="loadPanel('/routes/${r.id}/')">
+                <td style="color:#e6e8eb;font-weight:500;font-size:12px">${r.name}</td>
+                <td style="font-size:12px">${r.ship_name}</td>
+                <td>${shipBadge(r.ship_class, r.ship_class)}</td>
+                <td style="font-size:11px;color:#8892a4;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.origin_system} → ${r.destination_system}</td>
+                <td style="font-family:monospace;text-align:center">${r.total_jumps || 0}</td>
+                <td style="font-family:monospace;color:#8892a4">${parseFloat(r.total_distance_ly || 0).toFixed(2)} LY</td>
+                <td style="font-family:monospace;color:#f59e0b">${fmtNum(r.total_fuel)}</td>
+                <td style="font-family:monospace;color:#00d4aa">${fmtISK(r.fuel_cost_isk)}</td>
+                <td>${statusPill(r.status)}</td>
+                <td style="font-size:10px;color:#6b7280">${fmtDate(r.created_at)}</td>
+            </tr>
+        `).join('');
+    }
+
+    loadRoutes();
+})();
+</script>

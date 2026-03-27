@@ -1,0 +1,145 @@
+<div id="route-detail-container">
+    <p style="color:#6b7280;padding:40px;text-align:center">Loading route...</p>
+</div>
+
+<script>
+(function() {
+    var routeId = parseInt(window.location.pathname.match(/\/routes\/(\d+)\//)?.[1] || 0);
+    if (!routeId) {
+        document.getElementById('route-detail-container').innerHTML =
+            '<p style="color:#ef4444;padding:40px;text-align:center">Invalid route ID</p>';
+        return;
+    }
+
+    fetch('/api/routes/' + routeId).then(r => {
+        if (!r.ok) throw new Error('Route not found');
+        return r.json();
+    }).then(d => {
+        renderDetail(d);
+    }).catch(e => {
+        document.getElementById('route-detail-container').innerHTML =
+            '<p style="color:#ef4444;padding:40px;text-align:center">Error: ' + e.message + '</p>';
+    });
+
+    function renderDetail(d) {
+        var steps = d.steps || [];
+        var hasOutOfRange = steps.some(s => !s.within_range);
+
+        document.getElementById('route-detail-container').innerHTML = `
+            <div class="header-bar">
+                <div style="display:flex;gap:12px;align-items:center;margin-bottom:4px">
+                    <button class="btn muted" onclick="loadPanel('/routes/')" style="font-size:11px;padding:5px 10px">← Routes</button>
+                    <div class="icon-square teal">⚡</div>
+                    <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:28px;color:#fff;margin:0">${escHtml(d.name)}</h1>
+                    ${statusPill(d.status)}
+                    ${hasOutOfRange ? '<span style="font-size:11px;color:#ef4444;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:3px 8px">⚠ Out-of-range jumps</span>' : ''}
+                </div>
+                <div class="header-subtitle">${escHtml(d.ship_name)} · ${escHtml(d.origin_system)} → ${escHtml(d.destination_system)}</div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+                <button class="btn teal" onclick="logExecution(${d.id})">&#10003; Log Execution</button>
+                <select id="status-sel" class="dark-select" style="font-size:12px;padding:6px 10px">
+                    <option value="saved" ${d.status==='saved'?'selected':''}>Saved</option>
+                    <option value="active" ${d.status==='active'?'selected':''}>Active</option>
+                    <option value="completed" ${d.status==='completed'?'selected':''}>Completed</option>
+                    <option value="archived" ${d.status==='archived'?'selected':''}>Archived</option>
+                </select>
+                <button class="btn muted" onclick="updateStatus(${d.id})">Update Status</button>
+                <button class="btn muted" onclick="deleteRoute(${d.id})" style="color:#ef4444;border-color:rgba(239,68,68,0.3)">Delete</button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+                <div class="detail-panel">
+                    <div class="panel-label">Route Details</div>
+                    <div class="kv-row"><span class="kv-key">Ship</span><span class="kv-val">${escHtml(d.ship_name)}</span></div>
+                    <div class="kv-row"><span class="kv-key">Class</span><span class="kv-val">${escHtml(d.ship_class || '—')}</span></div>
+                    <div class="kv-row"><span class="kv-key">Origin</span><span class="kv-val">${escHtml(d.origin_system)}</span></div>
+                    <div class="kv-row"><span class="kv-key">Destination</span><span class="kv-val">${escHtml(d.destination_system)}</span></div>
+                    <div class="kv-row"><span class="kv-key">JDC Level</span><span class="kv-val">${d.jdc_level}</span></div>
+                    <div class="kv-row"><span class="kv-key">JDFE Level</span><span class="kv-val">${d.jdfe_level}</span></div>
+                    <div class="kv-row"><span class="kv-key">Fuel Type</span><span class="kv-val" style="color:#f59e0b">${escHtml(d.fuel_type || '—')}</span></div>
+                    <div class="kv-row"><span class="kv-key">Created</span><span class="kv-val">${fmtDate(d.created_at)}</span></div>
+                    ${d.tags ? `<div class="kv-row"><span class="kv-key">Tags</span><span class="kv-val">${escHtml(d.tags)}</span></div>` : ''}
+                    ${d.notes ? `<div class="kv-row" style="align-items:flex-start"><span class="kv-key">Notes</span><span class="kv-val" style="white-space:pre-wrap">${escHtml(d.notes)}</span></div>` : ''}
+                </div>
+                <div class="detail-panel">
+                    <div class="panel-label">Fuel Summary</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+                        <div class="stat-box teal"><span class="stat-value">${d.total_jumps || 0}</span><span class="stat-label">Total Jumps</span></div>
+                        <div class="stat-box"><span class="stat-value">${parseFloat(d.total_distance_ly || 0).toFixed(2)}</span><span class="stat-label">Total LY</span></div>
+                        <div class="stat-box amber"><span class="stat-value">${fmtNum(d.total_fuel)}</span><span class="stat-label">Isotopes</span></div>
+                        <div class="stat-box teal"><span class="stat-value">${fmtISK(d.fuel_cost_isk)}</span><span class="stat-label">Total Cost</span></div>
+                    </div>
+                    <div class="kv-row"><span class="kv-key">Price Used</span><span class="kv-val">${fmtISK(d.fuel_price_isk)} /unit</span></div>
+                    <div class="kv-row"><span class="kv-key">Per Jump Avg</span><span class="kv-val">${d.total_jumps ? fmtNum(Math.round(d.total_fuel / d.total_jumps)) : '—'} units</span></div>
+                    <div class="kv-row"><span class="kv-key">Per LY Avg</span><span class="kv-val">${d.total_distance_ly ? fmtNum(Math.round(d.total_fuel / d.total_distance_ly)) : '—'} units/LY</span></div>
+                </div>
+            </div>
+
+            <div class="section-header"><h3>Jump Steps (${steps.length})</h3></div>
+            <table class="steps-table" style="margin-bottom:20px">
+                <thead><tr>
+                    <th style="width:36px">#</th>
+                    <th>From System</th><th>To System</th><th>Distance</th>
+                    <th>Fuel (units)</th><th>Cost (ISK)</th><th>In Range</th>
+                </tr></thead>
+                <tbody>
+                    ${steps.length ? steps.map(s => `
+                        <tr class="${s.within_range ? '' : 'step-row-bad'}">
+                            <td class="step-num">${s.step_number}</td>
+                            <td style="font-size:12px;color:#e6e8eb">${escHtml(s.from_system)}</td>
+                            <td style="font-size:12px;color:#e6e8eb">${escHtml(s.to_system)}</td>
+                            <td class="${s.within_range ? 'step-dist' : 'step-dist range-bad'}">${parseFloat(s.distance_ly).toFixed(4)} LY</td>
+                            <td class="step-fuel">${fmtNum(s.fuel_used)}</td>
+                            <td class="step-cost">${fmtISK(s.cost_isk)}</td>
+                            <td>${s.within_range ? '<span style="color:#22c55e;font-size:12px">&#10003;</span>' : '<span style="color:#ef4444;font-size:12px">⚠ Exceeds range</span>'}</td>
+                        </tr>
+                    `).join('') : '<tr><td colspan="7" style="text-align:center;color:#6b7280;padding:20px">No steps recorded</td></tr>'}
+                </tbody>
+            </table>
+        `;
+    }
+
+    window.updateStatus = function(id) {
+        var sel = document.getElementById('status-sel');
+        fetch('/api/routes/' + id + '/status', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({status: sel.value}),
+        }).then(r => r.json()).then(d => {
+            if (d.error) { ejrpToast(d.error, 'error'); return; }
+            ejrpToast('Status updated to ' + d.status, 'success');
+        });
+    };
+
+    window.logExecution = function(id) {
+        var pilot = prompt('Pilot name (optional):') || '';
+        fetch('/api/routes/' + id + '/log', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({pilot_name: pilot}),
+        }).then(r => r.json()).then(d => {
+            if (d.error) { ejrpToast(d.error, 'error'); return; }
+            ejrpToast('Execution logged!', 'success');
+            setTimeout(() => loadPanel('/routes/' + id + '/'), 600);
+        });
+    };
+
+    window.deleteRoute = function(id) {
+        if (!confirm('Archive this route?')) return;
+        fetch('/api/routes/' + id + '/delete', { method: 'POST' })
+            .then(r => r.json())
+            .then(d => {
+                if (d.error) { ejrpToast(d.error, 'error'); return; }
+                ejrpToast('Route archived', 'info');
+                setTimeout(() => loadPanel('/routes/'), 600);
+            });
+    };
+
+    function escHtml(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+})();
+</script>
